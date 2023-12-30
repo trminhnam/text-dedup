@@ -1,3 +1,4 @@
+cache*
 .vscode
 .benchmarks
 docs/build

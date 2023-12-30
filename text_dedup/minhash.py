@@ -131,6 +131,9 @@ if __name__ == "__main__":  # pragma: no cover
     parser = add_meta_args(parser)
     parser = add_minhash_args(parser)
     args = parser.parse_args()
+    
+    if args.num_proc == -1:
+        args.num_proc = os.cpu_count()
 
     HASH_BITS: int = args.hash_bits
 
@@ -188,17 +191,31 @@ if __name__ == "__main__":  # pragma: no cover
             if args.local:
                 ds = load_from_disk(args.path)
             else:
-                ds = load_dataset(
-                    path=args.path,
-                    name=args.name,
-                    data_dir=args.data_dir,
-                    data_files=args.data_files,
-                    split=args.split,
-                    revision=args.revision,
-                    cache_dir=args.cache_dir,
-                    num_proc=args.num_proc,
-                    token=args.use_auth_token,
-                )
+                dataset_args = {
+                    "path": args.path,
+                    "name": args.name,
+                    "data_dir": args.data_dir,
+                    "data_files": args.data_files,
+                    "split": args.split,
+                    "revision": args.revision,
+                    "cache_dir": args.cache_dir,
+                    "num_proc": args.num_proc,
+                }
+                if args.path not in ["text", "json", "csv"]:
+                    dataset_args.update({"token": args.use_auth_token})
+                ds = datasets.load_dataset(**dataset_args)
+                # ds = load_dataset(
+                #     path=args.path,
+                #     name=args.name,
+                #     data_dir=args.data_dir,
+                #     data_files=args.data_files,
+                #     split=args.split,
+                #     revision=args.revision,
+                #     cache_dir=args.cache_dir,
+                #     num_proc=args.num_proc,
+                #     token=args.use_auth_token if args.path not in ["text", "json", "csv"] else None,
+                # )
+            print(ds)
 
         LEN_DATASET = len(ds)
         # for minhash, we need to make a lot of hashes(=num_perms).
@@ -282,10 +299,12 @@ if __name__ == "__main__":  # pragma: no cover
 
         with timer("Saving"):
             final_data = final_data.remove_columns(["__cluster__"])
+            final_data = datasets.DatasetDict({"train": final_data})
             final_data.save_to_disk(args.output)
             if args.debug:
                 with open(os.path.join(args.output, "uf.pkl"), "wb") as f:
                     pickle.dump(uf, f, protocol=pickle.HIGHEST_PROTOCOL)
+        print(final_data)
 
         with timer("Cleaning"):
             if args.clean_cache:
