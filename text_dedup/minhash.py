@@ -134,6 +134,7 @@ if __name__ == "__main__":  # pragma: no cover
     
     if args.num_proc == -1:
         args.num_proc = os.cpu_count()
+    print(f'Num processors = {args.num_proc}')
 
     HASH_BITS: int = args.hash_bits
 
