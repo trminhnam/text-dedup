@@ -1,0 +1,46 @@
+DatasetDict({
+    train: Dataset({
+        features: ['text'],
+        num_rows: 17502
+    })
+})
+Pushing dataset shards to the dataset hub:   0%|          | 0/8 [00:00<?, ?it/s]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:25<00:50, 25.21s/ba][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:38<00:18, 18.26s/ba][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:38<00:00,  9.99s/ba][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:38<00:00, 12.92s/ba]
+Pushing dataset shards to the dataset hub:  12%|█▎        | 1/8 [01:37<11:20, 97.23s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:01<00:03,  1.51s/ba][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:02<00:01,  1.26s/ba][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:02<00:00,  1.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:02<00:00,  1.09ba/s]
+Pushing dataset shards to the dataset hub:  25%|██▌       | 2/8 [02:01<05:27, 54.55s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:00<00:01,  1.05ba/s][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:02<00:01,  1.12s/ba][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:02<00:00,  1.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:02<00:00,  1.14ba/s]
+Pushing dataset shards to the dataset hub:  38%|███▊      | 3/8 [02:25<03:22, 40.42s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:01<00:02,  1.03s/ba][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:01<00:00,  1.40ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  1.84ba/s]
+Pushing dataset shards to the dataset hub:  50%|█████     | 4/8 [02:44<02:07, 31.89s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:00<00:00,  2.07ba/s][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:00<00:00,  2.03ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  3.12ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.73ba/s]
+Pushing dataset shards to the dataset hub:  62%|██████▎   | 5/8 [02:55<01:13, 24.35s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:00<00:01,  1.52ba/s][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:01<00:00,  1.88ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.98ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.49ba/s]
+Pushing dataset shards to the dataset hub:  75%|███████▌  | 6/8 [03:07<00:40, 20.16s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:00<00:00,  2.05ba/s][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:01<00:00,  1.81ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.54ba/s]
+Pushing dataset shards to the dataset hub:  88%|████████▊ | 7/8 [03:19<00:17, 17.39s/it]
+Creating parquet from Arrow format:   0%|          | 0/3 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  33%|███▎      | 1/3 [00:00<00:01,  1.82ba/s][A
+Creating parquet from Arrow format:  67%|██████▋   | 2/3 [00:01<00:00,  1.87ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.87ba/s][ACreating parquet from Arrow format: 100%|██████████| 3/3 [00:01<00:00,  2.50ba/s]
+Pushing dataset shards to the dataset hub: 100%|██████████| 8/8 [03:30<00:00, 15.63s/it]Pushing dataset shards to the dataset hub: 100%|██████████| 8/8 [03:30<00:00, 26.36s/it]

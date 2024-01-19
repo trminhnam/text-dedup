@@ -192,6 +192,8 @@ if __name__ == "__main__":  # pragma: no cover
             if args.local:
                 ds = load_from_disk(args.path)
             else:
+                if args.data_files is not None:
+                    args.data_files = args.data_files.split(",")
                 dataset_args = {
                     "path": args.path,
                     "name": args.name,
@@ -217,6 +219,8 @@ if __name__ == "__main__":  # pragma: no cover
                 #     token=args.use_auth_token if args.path not in ["text", "json", "csv"] else None,
                 # )
             print(ds)
+            # for sample in ds:
+            #     print(sample)
 
         LEN_DATASET = len(ds)
         # for minhash, we need to make a lot of hashes(=num_perms).
