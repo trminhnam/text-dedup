@@ -9,6 +9,7 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=386G
 
+export PYTHONWARNINGS="ignore"
 cd ../..
 python -m text_dedup.minhash \
     --path "text" \
