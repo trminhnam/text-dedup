@@ -3,17 +3,17 @@
 # created     : 10/4/22
 from __future__ import annotations
 
-import argparse
 import gc
 import multiprocessing as mp
 import os
-import pickle
+import pickle  # nosec
 import random
 import re
 from collections import defaultdict
 from typing import Any
 from typing import Callable
 
+import click
 import datasets
 import numpy as np
 from datasets import load_dataset
@@ -23,10 +23,10 @@ from tqdm import tqdm
 from text_dedup import logger
 from text_dedup.utils import UnionFind
 from text_dedup.utils import ngrams
-from text_dedup.utils.add_args import add_io_args
-from text_dedup.utils.add_args import add_meta_args
-from text_dedup.utils.add_args import add_minhash_args
 from text_dedup.utils.analysis import optimal_param
+from text_dedup.utils.args import IOArgs
+from text_dedup.utils.args import MetaArgs
+from text_dedup.utils.args import MinHashArgs
 from text_dedup.utils.hashfunc import sha1_hash
 from text_dedup.utils.hashfunc import xxh3_16hash
 from text_dedup.utils.hashfunc import xxh3_32hash
@@ -36,6 +36,7 @@ SEED = 42
 RNG = np.random.RandomState(SEED)
 NON_ALPHA = re.compile(r"\W", re.UNICODE)
 datasets.logging.set_verbosity_error()
+uf = UnionFind()
 
 
 def embed_func(
@@ -88,9 +89,20 @@ def embed_func(
     >>> hashranges = [(i, i + 25) for i in range(0, 250, 25)]
     >>> max_hash = np.uint32((1 << 32) - 1)
     >>> modulo_prime = np.uint32((1 << 32) - 5)
-    >>> PERMUTATIONS = (RNG.randint(1, modulo_prime, size=num_perm),RNG.randint(0, modulo_prime, size=num_perm))
-    >>> res = embed_func(content, idx, num_perm=num_perm, ngram_size=ngram_size, min_length=0, hashranges=hashranges,
-    ... permutations=PERMUTATIONS, hash_func=xxh3_32hash,dtype=np.uint32, max_hash=max_hash, modulo_prime=modulo_prime)
+    >>> PERMUTATIONS = (RNG.randint(1, modulo_prime, size=num_perm), RNG.randint(0, modulo_prime, size=num_perm))
+    >>> res = embed_func(
+    ...     content,
+    ...     idx,
+    ...     num_perm=num_perm,
+    ...     ngram_size=ngram_size,
+    ...     min_length=0,
+    ...     hashranges=hashranges,
+    ...     permutations=PERMUTATIONS,
+    ...     hash_func=xxh3_32hash,
+    ...     dtype=np.uint32,
+    ...     max_hash=max_hash,
+    ...     modulo_prime=modulo_prime,
+    ... )
     >>> len(res["__signatures__"])
     10
     >>> res["__id__"]
@@ -102,7 +114,7 @@ def embed_func(
     # split content on whitespace (NON_ALPHA regex), tokenize with ngrams(), and join these n-grams into a single space separated string.
     # we then convert to lower case and then bytestrings which is then hashed. Only unique hashed n-grams are left.
     tokens: set[bytes] = {
-        bytes(" ".join(t).lower(), "utf-8") for t in ngrams(NON_ALPHA.split(content), ngram_size, min_length)
+        bytes(" ".join(t).lower(), "utf-8") for t in ngrams(NON_ALPHA.split(content.lower()), ngram_size, min_length)
     }
 
     hashvalues: np.ndarray = np.array([hash_func(token) for token in tokens], dtype=dtype).reshape(len(tokens), 1)
@@ -121,22 +133,18 @@ def embed_func(
     return {"__signatures__": Hs, "__id__": idx}
 
 
-if __name__ == "__main__":  # pragma: no cover
-    parser = argparse.ArgumentParser(
-        prog="text_dedup.minhash",
-        description="Deduplicate text using minhash",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser = add_io_args(parser)
-    parser = add_meta_args(parser)
-    parser = add_minhash_args(parser)
-    args = parser.parse_args()
-    
-    if args.num_proc == -1:
-        args.num_proc = os.cpu_count()
-    print(f'Num processors = {args.num_proc}')
-
-    HASH_BITS: int = args.hash_bits
+@click.command
+@IOArgs.option_group
+@MetaArgs.option_group
+@MinHashArgs.option_group
+def main(
+    io_args: IOArgs,
+    meta_args: MetaArgs,
+    minhash_args: MinHashArgs,
+):
+    global uf
+    uf.reset()
+    HASH_BITS: int = minhash_args.hash_bits
 
     # 64 bit config is backwards compatibility mode.
     # it uses 64 bit types but almost entirely 32bit data, except for one mersenne prime 2^61
@@ -154,7 +162,7 @@ if __name__ == "__main__":  # pragma: no cover
     # defaults to backwards compatible HASH_BITS = 64, which is np.uint64 dtypes with 32bit hashes
     DTYPE, MAX_HASH, MODULO_PRIME = HASH_CONFIG.get(HASH_BITS, HASH_CONFIG[64])
 
-    match args.hash_func:
+    match minhash_args.hash_func:
         case "sha1":
 
             def hash_func(byte_data):
@@ -170,11 +178,10 @@ if __name__ == "__main__":  # pragma: no cover
     # is not copied to child processes as long as it is not modified.
     mp.set_start_method("fork", force=True)
 
-    uf = UnionFind()
     timer = Timer()
 
-    if args.b is not None and args.r is not None:
-        B, R = args.b, args.r
+    if minhash_args.b is not None and minhash_args.r is not None:
+        B, R = minhash_args.b, minhash_args.r
     else:
         # Compute the optimal `MinHashLSH` parameter that minimizes the weighted sum
         # of probabilities of false positive and false negative, taken from datasketch.
@@ -182,15 +189,20 @@ if __name__ == "__main__":  # pragma: no cover
         # The following assumes a "perfect hash". using 16 bit hashes might challenge this assumption
         # lower precision dtype will cause more collisions, so higher false_positives and less false negatives.
         # Both effects move the result towards more documents being considered duplicates.
-        B, R = optimal_param(args.threshold, args.num_perm, false_positive_weight=0.5, false_negative_weight=0.5)
+        B, R = optimal_param(
+            minhash_args.threshold,
+            minhash_args.num_perm,
+            false_positive_weight=0.5,
+            false_negative_weight=0.5,
+        )
 
     HASH_RANGES = [(i * R, (i + 1) * R) for i in range(B)]
     HASH_TABLES: list[dict[int, set]] = [defaultdict(set) for _ in range(B)]
 
     with timer("Total"):
         with timer("Loading"):
-            if args.local:
-                ds = load_from_disk(args.path)
+            if io_args.local:
+                ds = load_from_disk(io_args.path)
             else:
                 if args.data_files is not None:
                     args.data_files = args.data_files.split(",")
@@ -222,6 +234,11 @@ if __name__ == "__main__":  # pragma: no cover
             # for sample in ds:
             #     print(sample)
 
+            ds = ds.filter(
+                lambda x: len(NON_ALPHA.split(x[meta_args.column].lower())) >= minhash_args.min_length,
+                num_proc=io_args.num_proc,
+            )
+
         LEN_DATASET = len(ds)
         # for minhash, we need to make a lot of hashes(=num_perms).
         # In many previous implementations, this is achieved through a method described in
@@ -230,46 +247,55 @@ if __name__ == "__main__":  # pragma: no cover
         # `new_hash = (a * x + b) mod prime mod max_hash` we need one a (!=0), b pair per new hash
         # the following produces these a, b pairs
         PERMUTATIONS: tuple[np.ndarray, np.ndarray] = (
-            RNG.randint(1, MODULO_PRIME, size=(args.num_perm,), dtype=DTYPE),  # a is a multiplier so should not be 0
-            RNG.randint(0, MODULO_PRIME, size=(args.num_perm,), dtype=DTYPE),  # b
+            RNG.randint(
+                1, MODULO_PRIME, size=(minhash_args.num_perm,), dtype=DTYPE
+            ),  # a is a multiplier so should not be 0
+            RNG.randint(0, MODULO_PRIME, size=(minhash_args.num_perm,), dtype=DTYPE),  # b
         )
 
         with timer("MinHashing"):
             embedded = ds.map(
                 function=embed_func,
                 fn_kwargs={
-                    "num_perm": args.num_perm,
+                    "num_perm": minhash_args.num_perm,
                     "hashranges": HASH_RANGES,
-                    "ngram_size": args.ngram,
-                    "min_length": args.min_length,
+                    "ngram_size": minhash_args.ngram,
+                    "min_length": minhash_args.min_length,
                     "permutations": PERMUTATIONS,
                     "hash_func": hash_func,
                     "dtype": DTYPE,
                     "max_hash": MAX_HASH,
                     "modulo_prime": MODULO_PRIME,
                 },
-                input_columns=[args.column],
+                input_columns=(
+                    [meta_args.column] if meta_args.idx_column is None else [meta_args.column, meta_args.idx_column]
+                ),
                 remove_columns=ds.column_names,
-                num_proc=args.num_proc,
-                with_indices=True,
+                num_proc=io_args.num_proc,
+                with_indices=True if meta_args.idx_column is None else False,
                 desc="Fingerprinting...",
             )
             LEN_EMBEDDED = len(embedded)
-            NUM_SHARDS = np.ceil(LEN_EMBEDDED / args.batch_size).astype(int)
+            NUM_SHARDS = np.ceil(LEN_EMBEDDED / meta_args.batch_size).astype(int)
 
         with timer("Clustering"):
+            edges = []
             for i in tqdm(
                 range(0, NUM_SHARDS),
                 dynamic_ncols=True,
                 desc="Iterating MinHashes...",  # noqa: E501
             ):
                 embedded_shard = embedded.shard(
-                    num_shards=NUM_SHARDS, index=i, contiguous=True, writer_batch_size=args.batch_size
+                    num_shards=NUM_SHARDS,
+                    index=i,
+                    contiguous=True,
+                    writer_batch_size=meta_args.batch_size,
                 )
                 for key, Hs in zip(embedded_shard["__id__"], embedded_shard["__signatures__"]):
                     for i, H in enumerate(Hs):
                         HASH_TABLES[i][H].add(key)
 
+            print("Number of clusters:", len(HASH_TABLES))
             for table in tqdm(HASH_TABLES, dynamic_ncols=True, desc="Clustering..."):
                 # cluster: Set[int]
                 for cluster in table.values():
@@ -277,8 +303,9 @@ if __name__ == "__main__":  # pragma: no cover
                         continue
                     idx = min(cluster)
                     for x in cluster:
+                        edges.append((x, idx))
                         uf.union(x, idx)
-
+        print(f"Number of edges: {len(set(edges))}")
         with timer("Filtering"):
             # gc manipulations to ensure that uf object is not unneccessarily copied across processes
             gc.freeze()
@@ -286,7 +313,7 @@ if __name__ == "__main__":  # pragma: no cover
             ds = ds.map(
                 function=lambda _, idx: {"__cluster__": uf.find(idx)},
                 with_indices=True,
-                num_proc=args.num_proc,
+                num_proc=io_args.num_proc,
                 new_fingerprint=str(random.getrandbits(128)),
                 desc="Finding clusters...",
             )
@@ -298,21 +325,20 @@ if __name__ == "__main__":  # pragma: no cover
             final_data = ds.filter(
                 function=lambda record, idx: record["__cluster__"] == idx,
                 with_indices=True,
-                num_proc=args.num_proc,
+                num_proc=io_args.num_proc,
                 desc="Filtering clusters...",
             )
 
         with timer("Saving"):
             final_data = final_data.remove_columns(["__cluster__"])
-            final_data = datasets.DatasetDict({"train": final_data})
-            final_data.save_to_disk(args.output)
-            if args.debug:
-                with open(os.path.join(args.output, "uf.pkl"), "wb") as f:
+            final_data.save_to_disk(io_args.output)
+            if io_args.debug:
+                with open(os.path.join(io_args.output, "uf.pkl"), "wb") as f:
                     pickle.dump(uf, f, protocol=pickle.HIGHEST_PROTOCOL)
         print(final_data)
 
         with timer("Cleaning"):
-            if args.clean_cache:
+            if io_args.clean_cache:
                 ds.cleanup_cache_files()
                 final_data.cleanup_cache_files()
 
@@ -320,5 +346,10 @@ if __name__ == "__main__":  # pragma: no cover
     for k, v in timer.elapsed_times.items():
         logger.info(f"{k:<{PAD}}: {v:.2f}s")
 
-    logger.info(f"{'Before':<{PAD}}: {len(ds)}")
+    logger.info(f"{'Before':<{PAD}}: {LEN_DATASET}")
     logger.info(f"{'After':<{PAD}}: {len(final_data)}")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # pylint: disable=no-value-for-parameter
+    main()

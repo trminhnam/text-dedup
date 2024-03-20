@@ -37,43 +37,61 @@ This repository is inspired by the following projects, and is heavily influenced
 
 ## Quick Examples
 
-### PySpark with DataProc
-
-Not a lot of people have access to enough compute resources or the need to deduplicate TB-scale datasets, but if you do, this is a good example of how to use it with GCP DataProc.
+### Native PySpark
 
 *MODIFY `text_dedup/minhash_spark.py` FOR YOUR OWN PROJECT AND DATASET FIRST!*
 
+Assuming you have a downloaded dataset (in parquet files) under "./temp-data", you can process with file with your local compute by:
+
 ```bash
-export CLUSTER_NAME=chenghao-temp
-export PROJECT_ID=xx
-export REGION=us-central1
-export ZONE=us-central1-a
-export INPUT_GCS_PATH="gs://chenghao-temp-exp/data/ada"
-export OUTPUT_GCS_PATH="gs://chenghao-temp-exp/output/ada"
-
-gcloud dataproc clusters create $CLUSTER_NAME \
-    --enable-component-gateway \
-    --region $REGION \
-    --zone $ZONE \
-    --master-machine-type c2d-standard-16 \
-    --master-boot-disk-size 500 \
-    --num-workers 10 \
-    --worker-machine-type c2d-standard-16 \
-    --worker-boot-disk-size 500 \
-    --image-version 2.0-debian10 \
-    --project $PROJECT_ID
-
-gcloud dataproc jobs submit pyspark --cluster ${CLUSTER_NAME}\
-    --region $REGION \
-    --jars gs://spark-lib/bigquery/spark-3.3-bigquery-0.32.2.jar \
-    --driver-log-levels root=FATAL,__main__=DEBUG \
-    --properties="spark.executor.memory"="50g","spark.driver.memory"="8g","spark.executor.cores"="14" \
-    minhash_spark.py -- --input $INPUT_GCS_PATH --output $OUTPUT_GCS_PATH
+export PYSPARK_PYTHON="path to your python with scipy, xxhash, and numpy installed"
+spark-submit --executor-memory 16g \
+    --driver-memory 20g \
+    --executor-cores 3 \
+    --num-executors 2 \
+    --packages graphframes:graphframes:0.8.2-spark3.2-s_2.12 \
+    --conf "spark.executor.extraJavaOptions=-Dlog4j.configuration=./log4j.properties" \
+    --conf "spark.driver.extraJavaOptions=-Dlog4j.configuration=./log4j.properties" \
+    text_dedup/minhash_spark.py\
+    --input "./temp-data" \
+    --output "./temp-output" \
+    --column "text" \
+    --threshold 0.7
 ```
 
-For reference, the script finished deduplicating 42 million rows in less than 40 minutes with above settings (160 cores, 640GB memory in total), while the python version would take around 10 hours with a 80-core machine with 1.8TB memory.
+```
+DEBUG __main__ - ------------------------------------------------------------------------------------------------------------------------
+DEBUG __main__ - Using B=25, R=10
+DEBUG __main__ - Loaded documents: 88803
+DEBUG __main__ - args.input='./temp-data'
+DEBUG __main__ - args.output='./temp-output'
+DEBUG __main__ - args.threshold=0.7
+DEBUG __main__ - args.ngram_size=5
+DEBUG __main__ - args.min_length=5
+DEBUG __main__ - args.num_perm=250
+DEBUG __main__ - args.column='text'
+DEBUG __main__ - id                                                              : bigint
+DEBUG __main__ - text                                                            : string
+DEBUG __main__ - meta                                                            : struct<warc_headers:struct<warc-record-id:string,warc-date:string,content-type:string,content-length:int,warc-type:string,warc-identified-content-language:string,warc-refers-to:string,warc-target-uri:string,warc-block-digest:string>,identification:struct<label:string,prob:float>,annotations:array<string>,line_identifications:array<struct<label:string,prob:float>>>
+DEBUG __main__ - __id__                                                          : bigint
+DEBUG __main__ - ------------------------------------------------------------------------------------------------------------------------
+DEBUG __main__ - Initial edges: 52102
+DEBUG __main__ - Edges DataFrame: 52102
+DEBUG __main__ - Vertices DataFrame: 50206
+DEBUG __main__ - Assignment DataFrame: 50206
+DEBUG __main__ - Merging records: 88803
+INFO  __main__ - Saving with 1 partitions and 44092 rows each
+DEBUG __main__ - ------------------------------------------------------------------------------------------------------------------------
+DEBUG __main__ - Number of rows before:    88803
+DEBUG __main__ - Number of rows after:     44092
+DEBUG __main__ - Percentage of rows kept:  49.65%
+DEBUG __main__ - Output:                   ./temp-output
+DEBUG __main__ - Time:                     68.80s
+DEBUG __main__ - ------------------------------------------------------------------------------------------------------------------------
 
-In the following part, we are going to deduplicate one dataset: `gl` subset of `oscar-corpus/OSCAR-2201`.
+```
+
+Or take a look at [bigcode-v2/run.sh](https://github.com/bigcode-project/bigcode-dataset/blob/main/near_deduplication/bigcode-v2/run.sh) on how to run the job with GCP DataProc.
 
 ### Suffix Array Substring Exact Deduplication
 
@@ -202,19 +220,58 @@ INFO     After                         : 47045
 
 ## Benchmarks
 
-A benchmark of different methods here can be found in `benchmarks/wiki40.ipynb`. A notebook in evaluating MinHash on `pinecone/core-2020-05-10-deduplication` can be found in `benchmarks/pinecone.ipynb`.
+### pinecone/core-2020-05-10-deduplication
 
-For quick reference, here are the results:
+See `tests/test_benchmark_core.py` for reproduction.
 
-| Method                                                                          | Precision        | Recall           | F1               | Time |
-| ------------------------------------------------------------------------------- | ---------------- | ---------------- | ---------------- | ---- |
-| MinHash                                                                         | **0.9464** | **0.9446** | **0.9455** | 24s  |
-| SimHash\*                                                                       | 0.9011           | 0.6959           | 0.7853           | 210s |
-| SimHash[(Gyawali et al., LREC 2020)](https://aclanthology.org/2020.lrec-1.113)     | 0.697            | 0.247            | 0.3647           | -    |
-| Exact Title (my implementation)                                                 | 0.8302           | 0.5521           | 0.6632           | -    |
-| Exact Title[(Gyawali et al., LREC 2020)](https://aclanthology.org/2020.lrec-1.113) | 0.830            | 0.50             | 0.624            | -    |
+| Algorithm                       | Precision (Duplicates) | Recall (Duplicates) | Precision (Non Duplicates) | Recall (Non Duplicates) | Macro F1 score |  Accuracy | Time    |
+| :------------------------------ | ---------------------: | ------------------: | -------------------------: | ----------------------: | -------------: | --------: | :------ |
+| MinHash Spark                   |                  0.957 |               0.945 |                      0.947 |                   0.959 |      **0.952** |     0.920 | 698.76s |
+| MinHash                         |                  0.959 |               0.945 |                      0.947 |                   0.962 |      **0.953** |     0.924 | 18.80s  |
+| SimHash                         |                  0.904 |               0.721 |                      0.792 |                   0.933 |          0.848 |     0.832 | 660.73s |
+| Exact Title                     |                  0.830 |               0.552 |                      0.710 |                   0.907 |           0.77 |     0.746 | -       |
+| Exact Title Matching [^1]       |                  0.830 |                0.50 |                      0.709 |                   0.992 |          0.757 |     0.746 | -       |
+| Simhash Matching [^1]           |                  0.697 |               0.247 |                      0.598 |                   0.985 |          0.631 |     0.616 | -       |
+| Document Vector Similarity [^1] |                  0.912 |               0.779 |                      0.861 |                   0.986 |          0.885 |     0.883 | -       |
+| Hybrid Method [^1]              |                  0.908 |               0.828 |                      0.899 |                   0.979 |          0.904 |     0.903 | -       |
+| LaBSE[^2]                       |                  0.937 |               0.923 |                      0.930 |                   0.943 |          0.933 |     0.919 | -       |
+| Multilingual USE[^2]            |                  0.917 |               0.907 |                      0.918 |                   0.927 |          0.917 |     0.909 | -       |
+| Multilingual E5-Base[^2]        |                  0.931 |               0.908 |                      0.919 |                   0.939 |          0.924 |     0.920 | -       |
+| MinHash + LSH[^2]               |                  0.929 |               0.902 |                      0.915 |                   0.938 |          0.921 |     0.918 | -       |
+| RETSimPartial-Dup[^2]           |                  0.945 |               0.941 |                      0.945 |                   0.949 |          0.945 | **0.928** | -       |
+| RETSimNear-Dup[^2]              |                  0.928 |               0.937 |                      0.942 |                   0.934 |          0.935 | **0.926** | -       |
 
-\*Best SimHash result from `benchmarks/hyperparameter.ipynb`.
+
+### NEWS-COPY
+
+See `tests/test_benchmark_news.py` for reproduction.
+
+Adjusted Rand Index (ARI) on NEWS-COPY dataset:
+
+| Model/Algorithm          | ARI       |
+| :----------------------- | :-------- |
+| n-gram [^3]              | 0.440     |
+| SimHash                  | 0.612     |
+| SimHash[^2]              | 0.695     |
+| MinHash                  | 0.742     |
+| MinHash[^3]              | 0.737     |
+| MinHash[^2]              | 0.783     |
+| Multilingual USE[^2]     | 0.730     |
+| Multilingual E5-Base[^2] | 0.742     |
+| S-BERT[^3]               | 0.700     |
+| RETSim Partial-Dup[^2]   | 0.831     |
+| RETSim Near-Dup[^2]      | 0.704     |
+| Re-ranking [^3]          | **0.937** |
+| Bi-encoder [^3]          | 0.915     |
+
+
+[^1]: [(Gyawali et al., LREC 2020)](https://aclanthology.org/2020.lrec-1.113)
+[^2]: [RETSim: Resilient and Efficient Text Similarity](https://arxiv.org/abs/2311.17264)
+[^3]: [Noise-Robust De-Duplication at Scale](https://www.semanticscholar.org/paper/Noise-Robust-De-Duplication-at-Scale-Silcock-D'Amico-Wong/7ca41cc5fc364b713aba5b573ae4ada801fd788a)
+
+> [!note]
+> Spark implementation has some overhead for small datasets, so I recommend using the script only when you have a large dataset and enough compute resources.
+
 
 <!-- ## FAQ
 

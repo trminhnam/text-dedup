@@ -1,20 +1,35 @@
-# Minimal makefile for Sphinx documentation
-#
-
-# You can set these variables from the command line, and also
-# from the environment for the first two.
 SPHINXOPTS    ?=
 SPHINXBUILD   ?= sphinx-build
-SOURCEDIR     = source
-BUILDDIR      = build
+SOURCEDIR     = docs/source
+BUILDDIR      = docs/build
 
-# Put it first so that "make" without argument is like "make help".
-help:
-	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+build:
+	docker compose build
 
-.PHONY: help Makefile
+up:
+	docker compose up --detach
 
-# Catch-all target: route all unknown targets to Sphinx using the new
-# "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
-%: Makefile
-	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+down:
+	docker compose down
+
+build-doc: up
+	docker compose run $(SPHINXBUILD) -b html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
+
+serve: up build-doc
+	cd "$(BUILDDIR)" && python3 -m http.server
+
+test: up
+	docker compose exec local poetry run coverage run -m pytest -vvv -s --doctest-modules . --ignore deduplicate-text-datasets --ignore docs --ignore text_dedup/minhash_spark.py --ignore tests/test_benchmark.py
+	docker compose exec local poetry run coverage xml -o cobertura.xml
+	docker compose exec local poetry run coverage report -m
+	docker compose cp local:/app/cobertura.xml cobertura.xml
+
+benchmark: up
+	docker compose exec local poetry run python tests/test_benchmark_core.py
+	docker compose exec local poetry run python tests/test_benchmark_news.py
+
+spark_test: up
+	docker compose exec local poetry run pytest -vvv -s --doctest-modules tests/test_minhash_spark.py
+
+clean:
+	docker system prune -a

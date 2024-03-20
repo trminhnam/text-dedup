@@ -3,18 +3,18 @@
 # @Author  : Chenghao Mou (mouchenghao@gmail.com)
 from __future__ import annotations
 
-import argparse
 import gc
 import math
 import multiprocessing as mp
 import os
-import pickle
+import pickle  # nosec
 import random
 from collections import defaultdict
 from itertools import permutations
 from typing import Any
 from typing import Callable
 
+import click
 import datasets
 import numpy as np
 from bitarray import bitarray
@@ -24,16 +24,18 @@ from datasets import load_from_disk
 from tqdm import tqdm
 
 from text_dedup import logger
+from text_dedup.utils import IOArgs
+from text_dedup.utils import MetaArgs
+from text_dedup.utils import SimHashArgs
 from text_dedup.utils import UnionFind
-from text_dedup.utils import add_io_args
-from text_dedup.utils import add_meta_args
-from text_dedup.utils import add_simhash_args
 from text_dedup.utils import ngrams
 from text_dedup.utils.hashfunc import xxh3_64_digest
 from text_dedup.utils.hashfunc import xxh3_128_digest
 from text_dedup.utils.timer import Timer
 
+mp.set_start_method("fork", force=True)
 datasets.logging.set_verbosity_error()
+uf = UnionFind()
 
 
 def _hamming_distance(a: bitarray, b: bitarray) -> int:
@@ -54,9 +56,9 @@ def _hamming_distance(a: bitarray, b: bitarray) -> int:
 
     Examples
     --------
-    >>> _hamming_distance(bitarray('1010'), bitarray('1010'))
+    >>> _hamming_distance(bitarray("1010"), bitarray("1010"))
     0
-    >>> _hamming_distance(bitarray('1010'), bitarray('0010'))
+    >>> _hamming_distance(bitarray("1010"), bitarray("0010"))
     1
     """
     return (a ^ b).count(1)
@@ -101,7 +103,9 @@ class Permutation:
 
             self.masks.append(mask)
 
-        assert sum(self.widths) == f, "The sum of block widths must be equal to the fingerprint size"
+        assert (
+            sum(self.widths) == f
+        ), f"The sum of block widths {sum(self.widths)} must be equal to the fingerprint size {f}"
 
         prefix_width = sum(self.widths[: b - k])
         self.search_mask: bitarray = bitarray(f)
@@ -187,11 +191,31 @@ def _create_permutations(f: int, k: int, b: int) -> list[Permutation]:
     >>> for perm in perms:
     ...     assert perm.reverse(perm.permute(data)) == data, f"{perm.reverse(perm.permute(data))} != {data}"
     """
-    block_size: int = math.ceil(f / b)
     masks: list[tuple[bitarray, int, int, int]] = []
 
+    max_block_size: int = math.ceil(f / b)
+    min_block_size: int = math.floor(f / b)
+
+    # solve: max_block_size * x + min_block_size * y == f
+    x, y = 0, 0
+    while True:
+        x += 1
+        if (f - x * max_block_size) % min_block_size == 0:
+            y = (f - x * max_block_size) // min_block_size
+            break
+
+    print(f"{x=} w/ {max_block_size}, {y=} w/ {min_block_size}")
+    assert (
+        x * max_block_size + y * min_block_size == f
+    ), f"{x=} w/ {max_block_size}, {y=} w/ {min_block_size} are invalid"
+
+    start = end = 0
+
     for i in range(b):
-        start, end = i * block_size, min((i + 1) * block_size, f)
+        block_size = max_block_size if x > 0 else min_block_size
+        start, end = end, min(end + block_size, f)
+        if start >= end:
+            break
         mask: bitarray = bitarray(f)
         mask.setall(0)
         mask[start:end] = 1
@@ -235,9 +259,9 @@ def _unsigned_hash(obj: bytes, hash_func: Callable) -> bitarray:
 
     Examples
     --------
-    >>> len(_unsigned_hash(b'hello world',xxh3_64_digest))
+    >>> len(_unsigned_hash(b"hello world", xxh3_64_digest))
     64
-    >>> len(_unsigned_hash(b'hello world',xxh3_128_digest))
+    >>> len(_unsigned_hash(b"hello world", xxh3_128_digest))
     128
     """
     result = bitarray(0)
@@ -305,7 +329,7 @@ def embed_func(
 
     Examples
     --------
-    >>> res = embed_func("hello world", 0, ngram=3, permutations=None,hash_func=xxh3_64_digest)
+    >>> res = embed_func("hello world", 0, ngram=3, permutations=None, hash_func=xxh3_64_digest)
     >>> res["__id__"]
     0
     >>> len(res["__signature__"])
@@ -325,43 +349,39 @@ def embed_func(
     return {"__id__": idx, "__keys__": keys, "__signature__": sig.tobytes()}
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog="text_dedup.simhash",
-        description="Deduplicate text using simhash",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser = add_io_args(parser)
-    parser = add_meta_args(parser)
-    parser = add_simhash_args(parser)
-    args = parser.parse_args()
-
-    mp.set_start_method("fork", force=True)
-
-    uf = UnionFind()
-
+@click.command
+@IOArgs.option_group
+@MetaArgs.option_group
+@SimHashArgs.option_group
+def main(
+    io_args: IOArgs,
+    meta_args: MetaArgs,
+    simhash_args: SimHashArgs,
+):
+    global uf
+    uf.reset()
     timer = Timer()
-    PERMUTATIONS = _create_permutations(args.f, k=args.bit_diff, b=args.num_bucket)
+    PERMUTATIONS = _create_permutations(simhash_args.f, k=simhash_args.bit_diff, b=simhash_args.num_bucket)
     BUCKETS: dict[Any, list] = defaultdict(list)
 
     # current code only supports 64 or 128 bit simhash sizes
-    hash_func = {64: xxh3_64_digest, 128: xxh3_128_digest}.get(args.f, xxh3_64_digest)
+    hash_func = {64: xxh3_64_digest, 128: xxh3_128_digest}.get(simhash_args.f, xxh3_64_digest)
 
     with timer("Total"):
         with timer("Loading"):
-            if args.local:
-                ds = load_from_disk(args.path)
+            if io_args.local:
+                ds = load_from_disk(io_args.path)
             else:
                 ds = load_dataset(
-                    path=args.path,
-                    name=args.name,
-                    data_dir=args.data_dir,
-                    data_files=args.data_files,
-                    split=args.split,
-                    revision=args.revision,
-                    cache_dir=args.cache_dir,
-                    num_proc=args.num_proc,
-                    token=args.use_auth_token,
+                    path=io_args.path,
+                    name=io_args.name,
+                    data_dir=io_args.data_dir,
+                    data_files=io_args.data_files,
+                    split=io_args.split,
+                    revision=io_args.revision,
+                    cache_dir=io_args.cache_dir,
+                    num_proc=io_args.num_proc,
+                    token=io_args.use_auth_token,
                 )
 
         LEN_DATASET = len(ds)  # type: ignore
@@ -370,20 +390,22 @@ if __name__ == "__main__":
             embedded = ds.map(
                 function=embed_func,
                 fn_kwargs={
-                    "ngram": args.ngram,
+                    "ngram": simhash_args.ngram,
                     "permutations": PERMUTATIONS,
                     "hash_func": hash_func,
                 },
-                input_columns=[args.column],
-                remove_columns=[args.column],
-                num_proc=args.num_proc,  # type: ignore
-                with_indices=True,
+                input_columns=(
+                    [meta_args.column] if meta_args.idx_column is None else [meta_args.column, meta_args.idx_column]
+                ),
+                remove_columns=[meta_args.column],
+                num_proc=io_args.num_proc,  # type: ignore
+                with_indices=True if meta_args.idx_column is None else False,
                 desc="SimHashing...",  # type: ignore
             )
 
         # TODO Create multiple BUCKETS for parallelization
         LEN_EMBEDDED = len(embedded)
-        NUM_SHARDS = np.ceil(LEN_EMBEDDED / args.batch_size).astype(int)
+        NUM_SHARDS = np.ceil(LEN_EMBEDDED / meta_args.batch_size).astype(int)
         with timer("Clustering"):
             for batch_idx in tqdm(
                 range(0, NUM_SHARDS),
@@ -392,7 +414,7 @@ if __name__ == "__main__":
             ):
                 # Iterate over each batch dataset from the total hash embedded dataset
                 embedded_shard = embedded.shard(
-                    num_shards=NUM_SHARDS, index=batch_idx, contiguous=True, writer_batch_size=args.batch_size
+                    num_shards=NUM_SHARDS, index=batch_idx, contiguous=True, writer_batch_size=meta_args.batch_size
                 )
                 for idx, keys, sig in tqdm(
                     zip(embedded_shard["__id__"], embedded_shard["__keys__"], embedded_shard["__signature__"]),
@@ -413,7 +435,7 @@ if __name__ == "__main__":
                         for idy, other_fingerprint in BUCKETS[key]:
                             if idy in neighbors:
                                 continue
-                            if _hamming_distance(sig, other_fingerprint) <= args.bit_diff:
+                            if _hamming_distance(sig, other_fingerprint) <= simhash_args.bit_diff:
                                 neighbors.add(idy)
                         BUCKETS[key].append((idx, sig))
 
@@ -426,7 +448,7 @@ if __name__ == "__main__":
             ds = ds.map(
                 function=lambda _, idx: {"__cluster__": uf.find(idx)},
                 with_indices=True,
-                num_proc=args.num_proc,  # type: ignore
+                num_proc=io_args.num_proc,  # type: ignore
                 new_fingerprint=str(random.getrandbits(128)),  # type: ignore
                 desc="Finding clusters...",  # type: ignore
             )
@@ -438,19 +460,19 @@ if __name__ == "__main__":
             final_data = ds.filter(
                 function=lambda record, idx: record["__cluster__"] == idx,
                 with_indices=True,
-                num_proc=args.num_proc,
+                num_proc=io_args.num_proc,
                 desc="Filtering clusters...",
             )
 
         with timer("Saving"):
             final_data = final_data.remove_columns(["__cluster__"])
-            final_data.save_to_disk(args.output)
-            if args.debug:
-                with open(os.path.join(args.output, "uf.pkl"), "wb") as f:
+            final_data.save_to_disk(io_args.output)
+            if io_args.debug:
+                with open(os.path.join(io_args.output, "uf.pkl"), "wb") as f:
                     pickle.dump(uf, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         with timer("Cleaning"):
-            if args.clean_cache:
+            if io_args.clean_cache:
                 ds.cleanup_cache_files()
                 final_data.cleanup_cache_files()
 
@@ -458,5 +480,10 @@ if __name__ == "__main__":
     for k, v in timer.elapsed_times.items():
         logger.info(f"{k:<{PAD}}: {v:.2f}s")
 
-    logger.info(f"{'Before':<{PAD}}: {len(ds)}")
+    logger.info(f"{'Before':<{PAD}}: {LEN_DATASET}")
     logger.info(f"{'After':<{PAD}}: {len(final_data)}")
+
+
+if __name__ == "__main__":
+    # pylint: disable=no-value-for-parameter
+    main()

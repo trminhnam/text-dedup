@@ -27,12 +27,12 @@ def md5_digest(data: bytes) -> bytes:
     Examples
     --------
     # raw byte strings cause problems on doctests
-    >>> int.from_bytes(md5_digest(b"hello world"),"little")
+    >>> int.from_bytes(md5_digest(b"hello world"), "little")
     260265716838465564751810390803223393886
     >>> len(md5_digest(b"hello world"))
     16
     """
-    return md5(data).digest()
+    return md5(data, usedforsecurity=False).digest()
 
 
 def md5_hexdigest(data: bytes) -> str:
@@ -56,7 +56,7 @@ def md5_hexdigest(data: bytes) -> str:
     >>> len(md5_hexdigest(b"hello world"))
     32
     """
-    return md5(data).hexdigest()
+    return md5(data, usedforsecurity=False).hexdigest()
 
 
 def sha1_hash(data: bytes, d: int = 32) -> int:
@@ -85,11 +85,11 @@ def sha1_hash(data: bytes, d: int = 32) -> int:
     310522945683037930239412421226792791594
     """
     if d == 32:
-        return struct.unpack("<I", hashlib.sha1(data).digest()[:4])[0]
+        return struct.unpack("<I", hashlib.sha1(data, usedforsecurity=False).digest()[:4])[0]
     if d == 64:
-        return struct.unpack("<Q", hashlib.sha1(data).digest()[:8])[0]
+        return struct.unpack("<Q", hashlib.sha1(data, usedforsecurity=False).digest()[:8])[0]
     # struct is faster but does not support arbitrary bit lengths
-    return int.from_bytes(hashlib.sha1(data).digest()[: d // 8], byteorder="little")
+    return int.from_bytes(hashlib.sha1(data, usedforsecurity=False).digest()[: d // 8], byteorder="little")
 
 
 def sha256_digest(data: bytes) -> bytes:
@@ -109,7 +109,7 @@ def sha256_digest(data: bytes) -> bytes:
     Examples
     --------
     # raw byte strings cause problems on doctests
-    >>> int.from_bytes(sha256_digest(b"hello world"),"little")
+    >>> int.from_bytes(sha256_digest(b"hello world"), "little")
     105752752996721010526070019734402373604975086831773275823333741804099920678329
     >>> len(sha256_digest(b"hello world"))
     32
@@ -164,9 +164,9 @@ def xxh3_16hash(data: bytes, seed: int = 0) -> int:
     --------
     >>> xxh3_16hash(b"hello world")
     39051
-    >>> xxh3_16hash(b"hello world",seed=42)
+    >>> xxh3_16hash(b"hello world", seed=42)
     13198
-    >>> xxh3_16hash(b"hello world",seed=-42)
+    >>> xxh3_16hash(b"hello world", seed=-42)
     34281
     """
     return xxhash.xxh3_64_intdigest(data, seed) & 0xFFFF
@@ -195,9 +195,9 @@ def xxh3_32hash(data: bytes, seed: int = 0) -> int:
     --------
     >>> xxh3_32hash(b"hello world")
     1088854155
-    >>> xxh3_32hash(b"hello world",seed=42)
+    >>> xxh3_32hash(b"hello world", seed=42)
     3913102222
-    >>> xxh3_32hash(b"hello world",seed=-42)
+    >>> xxh3_32hash(b"hello world", seed=-42)
     3721037289
     """
     return xxhash.xxh3_64_intdigest(data, seed) & 0xFFFFFFFF
