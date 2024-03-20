@@ -7,8 +7,8 @@
 #SBATCH --error=logs/binhvq.out
 #SBATCH --nodelist=gpu01
 #SBATCH --gres=gpu:0
-#SBATCH --cpus-per-task=96
-#SBATCH --mem=900G
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=800G
 
 export PYTHONWARNINGS="ignore"
 cd ../..
@@ -19,5 +19,5 @@ python -m text_dedup.minhash \
     --cache_dir "./cache" \
     --output "output/binhvq" \
     --column text \
-    --batch_size 10000 \
-    --num_proc 96 \
+    --batch_size 1000 \
+    --num_proc 64 \

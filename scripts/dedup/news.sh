@@ -21,4 +21,4 @@ python -m text_dedup.minhash \
     --output "output/news" \
     --column text \
     --batch_size 1000 \
-    --num_proc 96 \
+    --num_proc 64 \
